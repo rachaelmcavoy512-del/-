@@ -1,0 +1,20 @@
+{
+  "name": "tax-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "记账报税与税务风险监控系统",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev:server": "npm -w server run dev",
+    "dev:web": "npm -w web run dev",
+    "build:server": "npm -w server run build",
+    "build:web": "npm -w web run build",
+    "build": "npm run build:server && npm run build:web",
+    "db:push": "npm -w server run db:push",
+    "prisma:generate": "npm -w server run prisma:generate",
+    "seed": "npm -w server run seed"
+  }
+}

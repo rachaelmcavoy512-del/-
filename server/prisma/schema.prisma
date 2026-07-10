@@ -1,0 +1,338 @@
+// 记账报税与税务风险监控系统 - Prisma 数据模型
+// Task 1 仅包含基础模型（User、AuditLog），后续任务会扩展
+//
+// 说明：SQLite 连接器不支持 Prisma enum，因此 role 使用 String 存储，
+// 取值范围在应用层约束为：ADMIN / ACCOUNTANT / AUDITOR / VIEWER。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// 用户模型
+model User {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  passwordHash String
+  // 角色取值：ADMIN(管理员) / ACCOUNTANT(会计) / AUDITOR(审计) / VIEWER(查询)
+  role         String   @default("VIEWER")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  riskRemediations RiskRemediation[] // 关联风险整改任务（Task7，指派给该用户）
+
+  @@map("users")
+}
+
+// 审计日志模型（Task8 使用）
+// 不可篡改设计：通过 prevHash / hash 形成哈希链，seq 自增序号保证顺序
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  action    String
+  target    String
+  ip        String
+  detail    String?
+  // 上一条日志的 hash，形成链；首条为 "GENESIS"
+  prevHash  String?
+  // 本条日志的 hash = sha256(prevHash|userId|action|target|ip|detail|createdAtISO)
+  hash      String
+  // 自增序号，保证顺序，全局唯一
+  seq       Int      @unique
+  createdAt DateTime @default(now())
+
+  @@map("audit_logs")
+}
+
+// 纳税人主体模型
+model TaxpayerSubject {
+  id           Int      @id @default(autoincrement())
+  name         String   // 企业名称
+  taxNumber    String   @unique // 纳税人识别号
+  taxpayerType String   // 纳税人类型：SMALL_SCALE 小规模 / GENERAL 一般纳税人（应用层校验）
+  industry     String?  // 行业
+  // 适用税率，小规模3%或一般13%等，可空表示按业务混合
+  // 说明：SQLite 连接器不支持 @db.Decimal 原生类型属性，故使用 Decimal? 存储
+  taxRate      Decimal?
+  address      String?  // 地址
+  phone        String?  // 电话
+  legalPerson  String?  // 法人
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  accounts Account[] // 关联科目
+  invoices Invoice[] // 关联发票
+  bankTransactions BankTransaction[] // 关联银行流水
+  payrollRecords PayrollRecord[] // 关联工资记录
+  importBatches ImportBatch[] // 关联导入批次
+  vouchers Voucher[] // 关联凭证
+  riskEvents RiskEvent[] // 关联风险事件（Task7）
+  taxReturns TaxReturn[] // 关联税务申报（Task6）
+
+  @@map("taxpayer_subjects")
+}
+
+// 税务申报模型（Task6 税务申报模块）
+// taxType: VAT 增值税 / CIT 企业所得税 / SURTAX 附加税 / IIT 个人所得税 / STAMP 印花税
+// period: 税款所属期，月度 YYYY-MM / 季度 YYYY-Q1..Q4 / 年度汇算清缴 YYYY-FY
+// status: DRAFT 草稿 / PENDING 待申报 / FILED 已申报 / PAID 已缴款
+// reportData: JSON 字符串，存储生成的申报表结构化数据
+model TaxReturn {
+  id             Int       @id @default(autoincrement())
+  subjectId      Int
+  taxType        String // 税种
+  period         String // 税款所属期
+  reportData     String // 申报表结构化数据（JSON 字符串）
+  status         String @default("DRAFT")
+  filedAt        DateTime?
+  filedBy        Int?
+  paidAt         DateTime?
+  paidBy         Int?
+  paymentVoucher String? // 缴款凭证号
+  createdBy      Int
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  subject TaxpayerSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@unique([subjectId, taxType, period])
+  @@index([subjectId, period])
+  @@map("tax_returns")
+}
+
+// 发票模型（Task5 数据导入）
+// direction: INPUT 进项 / OUTPUT 销项
+// invoiceType: SPECIAL 增值税专用发票 / NORMAL 增值税普通发票 / ELECTRONIC 电子发票 / OTHER
+// status: NORMAL 正常 / VOID 作废 / RED 红冲
+model Invoice {
+  id            Int      @id @default(autoincrement())
+  subjectId     Int
+  invoiceCode   String   // 发票代码
+  invoiceNo     String   // 发票号码
+  invoiceType   String   // 发票类型
+  direction     String   // 进项/销项
+  billingDate   DateTime // 开票日期
+  buyerName     String?  // 购方名称
+  sellerName    String?  // 销方名称
+  buyerTaxNo    String?  // 购方税号
+  sellerTaxNo   String?  // 销方税号
+  amountExclTax Decimal  // 不含税金额
+  taxAmount     Decimal  // 税额
+  amountInclTax Decimal  // 价税合计
+  taxRate       Decimal  // 税率，如 0.13
+  status        String   @default("NORMAL")
+  importBatch   String?  // 导入批次号
+  createdAt     DateTime @default(now())
+
+  subject TaxpayerSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@unique([subjectId, invoiceCode, invoiceNo])
+  @@index([subjectId, billingDate])
+  @@map("invoices")
+}
+
+// 银行流水模型（Task5 数据导入）
+// direction: IN 收入 / OUT 支出
+model BankTransaction {
+  id                  Int      @id @default(autoincrement())
+  subjectId           Int
+  accountNo           String?  // 银行账号
+  transDate           DateTime // 交易日期
+  amount              Decimal  // 金额
+  direction           String   // 收入/支出
+  counterparty        String?  // 对方户名
+  counterpartyAccount String?  // 对方账号
+  summary             String?  // 摘要
+  importBatch         String?  // 导入批次号
+  createdAt           DateTime @default(now())
+
+  subject TaxpayerSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@index([subjectId, transDate])
+  @@map("bank_transactions")
+}
+
+// 工资记录模型（Task5 数据导入）
+// period: 所属期 YYYY-MM
+model PayrollRecord {
+  id            Int      @id @default(autoincrement())
+  subjectId     Int
+  employeeName  String   // 员工姓名
+  employeeIdNo  String?  // 身份证号
+  period        String   // 所属期 YYYY-MM
+  grossSalary   Decimal  // 应发工资
+  socialInsurance Decimal @default(0) // 社保
+  housingFund   Decimal  @default(0) // 公积金
+  taxWithheld   Decimal  @default(0) // 代扣个税
+  netSalary     Decimal  // 实发工资
+  importBatch   String?  // 导入批次号
+  createdAt     DateTime @default(now())
+
+  subject TaxpayerSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@index([subjectId, period])
+  @@map("payroll_records")
+}
+
+// 导入批次模型（Task5 数据导入）
+// dataType: INVOICE / BANK / PAYROLL
+// status: PROCESSING / DONE / FAILED
+model ImportBatch {
+  id           Int      @id @default(autoincrement())
+  subjectId    Int
+  dataType     String   // 数据类型
+  fileName     String   // 文件名
+  totalCount   Int      // 总行数
+  successCount Int      // 成功数
+  failedCount  Int      // 失败数
+  errors       String?  // JSON 字符串，错误行详情 [{row, reason}]
+  status       String   // 批次状态
+  createdBy    Int      // 创建人
+  createdAt    DateTime @default(now())
+
+  subject TaxpayerSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@map("import_batches")
+}
+
+// 会计科目模型
+model Account {
+  id               Int      @id @default(autoincrement())
+  subjectId        Int      // 关联主体
+  code             String   // 科目编码，如 1001
+  name             String   // 科目名称，如 库存现金
+  direction        String   // 方向：DEBIT 借方 / CREDIT 贷方
+  level            Int      // 1-4 级
+  parentCode       String?  // 父科目编码
+  category         String   // 类别：ASSET 资产 / LIABILITY 负债 / EQUITY 所有者权益 / COST 成本 / INCOME 损益收入 / EXPENSE 损益支出
+  isLeaf           Boolean  @default(true) // 是否末级
+  balanceDirection String   // 余额方向：DEBIT/CREDIT
+
+  subject TaxpayerSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  entries VoucherEntry[] // 关联凭证明细
+
+  @@unique([subjectId, code])
+  @@map("accounts")
+}
+
+// 凭证模型（Task3 凭证记账）
+// status: DRAFT 草稿 / POSTED 已过账 / VOID 已作废 / RED_VOID 红冲
+model Voucher {
+  id               Int       @id @default(autoincrement())
+  subjectId        Int       // 纳税人主体
+  voucherNo        String    // 凭证字号，如 "记-2026-07-001"
+  voucherDate      DateTime  // 记账日期
+  summary          String?   // 凭证摘要
+  attachments      Int       @default(0) // 附件张数
+  status           String    // 状态：DRAFT / POSTED / VOID / RED_VOID
+  createdBy        Int       // 创建人 userId
+  postedBy         Int?      // 过账人 userId
+  postedAt         DateTime? // 过账时间
+  redOffsetVoucherId Int?    // 红冲关联的原凭证 id
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  subject TaxpayerSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  entries VoucherEntry[]
+
+  @@unique([subjectId, voucherNo])
+  @@index([subjectId, voucherDate])
+  @@map("vouchers")
+}
+
+// 凭证明细/分录模型（Task3 凭证记账）
+model VoucherEntry {
+  id         Int     @id @default(autoincrement())
+  voucherId  Int
+  accountId  Int     // 科目，关联 Account
+  summary    String? // 分录摘要
+  debit      Decimal @default(0) // 借方金额
+  credit     Decimal @default(0) // 贷方金额
+
+  voucher Voucher @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  account Account @relation(fields: [accountId], references: [id])
+
+  @@index([voucherId])
+  @@index([accountId])
+  @@map("voucher_entries")
+}
+
+// ============ Task7 税务风险监控模型 ============
+
+// 风险指标模型（风险指标库）
+// category: VAT 增值税 / CIT 所得税 / INVOICE 发票 / FUND 资金 / RELATED 关联 / OTHER
+// thresholdHigh/Medium/Low: JSON 字符串，阈值条件，如 {"lt":0.01} 表示税负率<1%
+// severity: DEFAULT_HIGH / DEFAULT_MEDIUM，无具体阈值时使用默认等级
+// level: HIGH 高 / MEDIUM 中 / LOW 低
+model RiskIndicator {
+  id             Int      @id @default(autoincrement())
+  code           String   @unique // 指标编码，如 VAT_TAX_BURDEN
+  name           String   // 指标名称，如"增值税税负率异常"
+  description    String?  // 指标说明
+  category       String   // 指标类别
+  thresholdHigh  String   // JSON，高风险阈值条件
+  thresholdMedium String  // JSON，中风险阈值
+  thresholdLow   String?  // JSON，低风险阈值，可空
+  severity       String   // 默认等级：DEFAULT_HIGH / DEFAULT_MEDIUM
+  enabled        Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  events RiskEvent[] // 命中的风险事件
+
+  @@map("risk_indicators")
+}
+
+// 风险事件模型（扫描命中的风险记录）
+// level: HIGH 高 / MEDIUM 中 / LOW 低
+// status: PENDING 待处理 / IN_PROGRESS 整改中 / RESOLVED 已整改 / IGNORED 已忽略
+model RiskEvent {
+  id            Int       @id @default(autoincrement())
+  subjectId     Int
+  indicatorId   Int
+  period        String?   // 所属期 YYYY-MM
+  level         String    // 风险等级 HIGH / MEDIUM / LOW
+  metricValue   String    // 命中指标的实际值，如税负率0.008
+  thresholdValue String?  // 命中的阈值
+  description   String    // 风险描述
+  suggestion    String?   // 整改建议
+  status        String    @default("PENDING")
+  detectedAt    DateTime  @default(now())
+  resolvedAt    DateTime?
+  resolvedBy    Int?
+  resolution    String?   // 整改说明
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  subject TaxpayerSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  indicator RiskIndicator @relation(fields: [indicatorId], references: [id])
+  remediations RiskRemediation[] // 整改任务
+
+  @@index([subjectId, status])
+  @@index([indicatorId])
+  @@map("risk_events")
+}
+
+// 风险整改任务模型
+// status: TODO 待处理 / DOING 进行中 / DONE 完成
+model RiskRemediation {
+  id        Int       @id @default(autoincrement())
+  eventId   Int
+  assigneeId Int      // 指派给某用户
+  status    String    @default("TODO") // TODO / DOING / DONE
+  note      String?
+  dueDate   DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  event RiskEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  assignee User   @relation(fields: [assigneeId], references: [id])
+
+  @@index([eventId])
+  @@index([assigneeId])
+  @@map("risk_remediations")
+}
