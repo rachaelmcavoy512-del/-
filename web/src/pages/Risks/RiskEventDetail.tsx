@@ -27,6 +27,8 @@ import {
   createRemediation,
   updateRemediation,
   listRiskUsers,
+  generateAdjustmentVoucher,
+  resolveRiskEvent,
   type RiskEvent,
   type RiskRemediation,
   type RemediationStatus,
@@ -49,6 +51,9 @@ const STATUS_COLOR: Record<string, string> = {
   RESOLVED: 'green',
   IGNORED: 'default',
 };
+
+// 支持一键生成整改凭证的指标编码（与后端 adjustmentService 一致）
+const AUTO_FIX_INDICATORS = ['VAT_TAX_BURDEN', 'EXCESS_CREDIT'];
 // 整改任务状态
 const REMEDIATION_STATUS_TEXT: Record<string, string> = {
   TODO: '待处理',
@@ -85,6 +90,7 @@ export default function RiskEventDetail() {
   const [event, setEvent] = useState<RiskEvent | null>(null);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [adjustLoading, setAdjustLoading] = useState(false);
   const [users, setUsers] = useState<RiskAssignee[]>([]);
   const [form] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
@@ -93,6 +99,9 @@ export default function RiskEventDetail() {
   const canManage = currentUser?.role === 'ADMIN' || currentUser?.role === 'ACCOUNTANT';
   const canUpdateStatus =
     currentUser?.role === 'ADMIN' || currentUser?.role === 'ACCOUNTANT' || currentUser?.role === 'AUDITOR';
+  // 是否可一键整改（指标编码命中且事件未结案）
+  const canAutoFix =
+    !!event && AUTO_FIX_INDICATORS.includes(event.indicator.code) && event.status !== 'RESOLVED' && event.status !== 'IGNORED';
 
   // 拉取事件详情
   const fetchEvent = useCallback(async () => {
@@ -135,6 +144,49 @@ export default function RiskEventDetail() {
     } finally {
       setActionLoading(false);
     }
+  };
+
+  // 一键生成整改凭证（草稿，不过账）
+  const handleGenerateAdjustment = async () => {
+    setAdjustLoading(true);
+    try {
+      await generateAdjustmentVoucher(eventId, false);
+      message.success('整改凭证已生成（草稿），可在下方查看后过账结案');
+      fetchEvent();
+    } catch (e) {
+      message.error(axios.isAxiosError(e) ? e.response?.data?.error || '生成整改凭证失败' : '生成整改凭证失败');
+    } finally {
+      setAdjustLoading(false);
+    }
+  };
+
+  // 过账调整凭证并结案
+  const handleResolve = async () => {
+    setAdjustLoading(true);
+    try {
+      await resolveRiskEvent(eventId);
+      message.success('整改凭证已过账，事件已结案');
+      fetchEvent();
+    } catch (e) {
+      message.error(axios.isAxiosError(e) ? e.response?.data?.error || '结案失败' : '结案失败');
+    } finally {
+      setAdjustLoading(false);
+    }
+  };
+
+  // 解析 actionableSteps 为步骤数组
+  const parseActionableSteps = (raw: string | null): string[] => {
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.filter((x) => typeof x === 'string');
+    } catch {
+      return raw
+        .split(/\r?\n/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+    return [];
   };
 
   // 创建整改任务
@@ -265,8 +317,30 @@ export default function RiskEventDetail() {
     <Card
       title={`风险事件 #${event.id}`}
       extra={
-        <Space>
+        <Space wrap>
           <Button onClick={() => navigate('/risks/events')}>返回列表</Button>
+          {canManage && canAutoFix && !event.adjustmentVoucherId && (
+            <Popconfirm
+              title="一键生成整改凭证"
+              description="将根据当前指标自动生成调整凭证（草稿状态），生成后可过账结案"
+              onConfirm={handleGenerateAdjustment}
+            >
+              <Button type="primary" loading={adjustLoading}>
+                一键生成整改凭证
+              </Button>
+            </Popconfirm>
+          )}
+          {canManage && event.adjustmentVoucherId && event.status !== 'RESOLVED' && event.status !== 'IGNORED' && (
+            <Popconfirm
+              title="过账调整凭证并结案？"
+              description="将过账已生成的调整凭证，并将本事件标记为已整改"
+              onConfirm={handleResolve}
+            >
+              <Button type="primary" loading={adjustLoading}>
+                过账并结案
+              </Button>
+            </Popconfirm>
+          )}
           {canUpdateStatus && event.status === 'PENDING' && (
             <Popconfirm
               title="确定忽略该风险事件吗？"
@@ -282,7 +356,7 @@ export default function RiskEventDetail() {
               title="确定标记该风险事件为已整改吗？"
               onConfirm={() => handleUpdateStatus('RESOLVED', '人工标记已整改')}
             >
-              <Button type="primary" loading={actionLoading}>
+              <Button loading={actionLoading}>
                 标记已整改
               </Button>
             </Popconfirm>
@@ -345,7 +419,33 @@ export default function RiskEventDetail() {
             {event.indicator.description}
           </Descriptions.Item>
         )}
+        {event.adjustmentVoucherId && (
+          <Descriptions.Item label="整改凭证" span={3}>
+            <Tag color="green">已生成</Tag>
+            <Button
+              type="link"
+              size="small"
+              style={{ padding: '0 0 0 4px' }}
+              onClick={() => navigate(`/vouchers/${event.adjustmentVoucherId}`)}
+            >
+              查看调整凭证 #{event.adjustmentVoucherId}
+            </Button>
+          </Descriptions.Item>
+        )}
       </Descriptions>
+
+      {/* 一键整改步骤（actionableSteps） */}
+      {event.actionableSteps && parseActionableSteps(event.actionableSteps).length > 0 && (
+        <Card type="inner" title="已执行整改步骤" size="small" style={{ marginBottom: 16 }}>
+          <ol style={{ margin: 0, paddingLeft: 20 }}>
+            {parseActionableSteps(event.actionableSteps).map((s, i) => (
+              <li key={i} style={{ marginBottom: 4 }}>
+                {s}
+              </li>
+            ))}
+          </ol>
+        </Card>
+      )}
 
       {/* 整改任务列表 */}
       <Card

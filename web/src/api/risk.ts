@@ -45,6 +45,10 @@ export interface RiskEvent {
   resolution: string | null;
   createdAt: string;
   updatedAt: string;
+  // 大白话整改步骤（JSON 字符串，由后端写入）
+  actionableSteps: string | null;
+  // 一键整改生成的调整凭证 ID
+  adjustmentVoucherId: number | null;
   indicator: {
     id: number;
     code: string;
@@ -190,7 +194,54 @@ export function updateRemediation(
 }
 
 // ============ 风险看板 ============
-
+// 风险看板
 export function getRiskDashboard(subjectId?: number) {
   return api.get<RiskDashboard>('/risks/dashboard', { params: { subjectId } });
+}
+
+// ============ 风险体检报告 ============
+
+// 体检报告事件项
+export interface ReportEvent {
+  id: number;
+  indicatorCode: string;
+  indicatorName: string;
+  level: string;
+  metricValue: string;
+  thresholdValue: string | null;
+  plainDescription: string;
+  fixSteps: string[] | null;
+  suggestion: string | null;
+  status: string;
+  canAutoFix: boolean;
+  actionableSteps: string | null;
+  adjustmentVoucherId: number | null;
+}
+
+// 体检报告
+export interface RiskReport {
+  subjectId: number;
+  subjectName: string;
+  period: string | null;
+  overallLevel: 'HIGH' | 'MEDIUM' | 'LOW' | 'HEALTHY';
+  totalEvents: number;
+  byLevel: { high: number; medium: number; low: number };
+  events: ReportEvent[];
+}
+
+// 获取风险体检报告
+export function getRiskReport(subjectId: number, period?: string) {
+  return api.get<RiskReport>('/risks/report', { params: { subjectId, period } });
+}
+
+// ============ 一键整改 ============
+
+// 生成整改凭证
+export function generateAdjustmentVoucher(eventId: number, postImmediately?: boolean) {
+  return api.post(`/risks/events/${eventId}/adjustment-voucher`, { postImmediately });
+}
+
+// 过账调整凭证并结案
+export function resolveRiskEvent(eventId: number) {
+  return api.post(`/risks/events/${eventId}/resolve`);
 }

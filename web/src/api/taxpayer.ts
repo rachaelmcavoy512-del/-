@@ -67,6 +67,30 @@ export function listTaxpayers(params?: { type?: string; keyword?: string }) {
   return api.get<TaxpayerSubject[]>('/taxpayers', { params });
 }
 
+// 极简创建（新手友好）
+export function quickCreateTaxpayer(data: {
+  name: string;
+  taxNumber: string;
+  taxpayerType: TaxpayerType;
+}) {
+  return api.post<TaxpayerSubject>('/taxpayers/quick-create', data);
+}
+
+// 首页统计
+export interface TaxpayerSummary {
+  id: number;
+  name: string;
+  taxNumber: string;
+  taxpayerType: TaxpayerType;
+  riskCount: number;
+  voucherCount: number;
+  lastReportPeriod: string | null;
+}
+
+export function getTaxpayerSummary() {
+  return api.get<TaxpayerSummary[]>('/taxpayers/summary');
+}
+
 // 详情（含科目列表）
 export function getTaxpayer(id: number) {
   return api.get<TaxpayerSubject>(`/taxpayers/${id}`);

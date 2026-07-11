@@ -20,6 +20,9 @@ export interface RiskIndicatorSeed {
   thresholdLow?: string | null; // JSON
   severity: string; // DEFAULT_HIGH / DEFAULT_MEDIUM
   enabled: boolean;
+  // 新手友好：大白话描述（含 {metricValue}/{thresholdValue} 占位符）+ 改正步骤（JSON 数组字符串）
+  plainDescription: string;
+  fixSteps: string;
 }
 
 export const RISK_INDICATORS: RiskIndicatorSeed[] = [
@@ -34,6 +37,10 @@ export const RISK_INDICATORS: RiskIndicatorSeed[] = [
     thresholdLow: null,
     severity: 'DEFAULT_HIGH',
     enabled: true,
+    plainDescription:
+      '你公司本月增值税税负率仅{metricValue}，低于行业预警值{thresholdValue}，税局会怀疑你少缴增值税',
+    fixSteps:
+      '["1.核查销项发票是否全部开具申报","2.核查大额进项发票是否真实业务","3.若虚开进项立即作废并做进项转出"]',
   },
   {
     code: 'INPUT_OUTPUT_MISMATCH',
@@ -46,6 +53,10 @@ export const RISK_INDICATORS: RiskIndicatorSeed[] = [
     thresholdLow: null,
     severity: 'DEFAULT_HIGH',
     enabled: true,
+    plainDescription:
+      '你公司本月进项税额比上月增长{metricValue}，远超正常水平，税局会重点核查',
+    fixSteps:
+      '["1.逐笔核查新增大额进项发票","2.确认每张进项对应真实采购","3.保留采购合同入库单付款凭证","4.不合规进项做转出处理"]',
   },
   {
     code: 'REVENUE_COST_MISMATCH',
@@ -57,6 +68,10 @@ export const RISK_INDICATORS: RiskIndicatorSeed[] = [
     thresholdLow: null,
     severity: 'DEFAULT_HIGH',
     enabled: true,
+    plainDescription:
+      '你公司本月成本占收入比例高达{metricValue}，明显偏高，税局会怀疑虚增成本',
+    fixSteps:
+      '["1.核查大额成本凭证是否真实","2.确认成本归集是否准确","3.调整不合理成本入账"]',
   },
   {
     code: 'INVOICE_ABNORMAL',
@@ -69,6 +84,10 @@ export const RISK_INDICATORS: RiskIndicatorSeed[] = [
     thresholdLow: null,
     severity: 'DEFAULT_HIGH',
     enabled: true,
+    plainDescription:
+      '你公司本月发票作废率{metricValue}偏高，存在虚开嫌疑',
+    fixSteps:
+      '["1.核查作废原因是否合理","2.确认无连号或顶额开票","3.规范开票流程"]',
   },
   {
     code: 'INVENTORY_MISMATCH',
@@ -81,6 +100,10 @@ export const RISK_INDICATORS: RiskIndicatorSeed[] = [
     thresholdLow: null,
     severity: 'DEFAULT_MEDIUM',
     enabled: true,
+    plainDescription:
+      '你公司账面库存与发票进销逻辑偏离{metricValue}，可能账实不符',
+    fixSteps:
+      '["1.盘点实际库存与账面核对","2.查找差异原因","3.做盘盈盘亏处理"]',
   },
   {
     code: 'FUND_FLOW_ABNORMAL',
@@ -93,6 +116,10 @@ export const RISK_INDICATORS: RiskIndicatorSeed[] = [
     thresholdLow: null,
     severity: 'DEFAULT_HIGH',
     enabled: true,
+    plainDescription:
+      '你公司存在资金回流/私户收款现象，税局会怀疑隐瞒收入',
+    fixSteps:
+      '["1.核查资金回流对手方","2.公对公结算避免私户收款","3.补充真实业务合同"]',
   },
   {
     code: 'RELATED_TRANSACTION',
@@ -104,6 +131,10 @@ export const RISK_INDICATORS: RiskIndicatorSeed[] = [
     thresholdLow: null,
     severity: 'DEFAULT_MEDIUM',
     enabled: true,
+    plainDescription:
+      '你公司关联交易定价偏离正常水平{metricValue}，可能被认定转移利润',
+    fixSteps:
+      '["1.核查关联交易定价是否符合独立交易原则","2.准备同期资料","3.调整关联定价至公允水平"]',
   },
   {
     code: 'LONG_ZERO_FILING',
@@ -115,6 +146,10 @@ export const RISK_INDICATORS: RiskIndicatorSeed[] = [
     thresholdLow: null,
     severity: 'DEFAULT_HIGH',
     enabled: true,
+    plainDescription:
+      '你公司连续{metricValue}期零申报或微利，税局会重点监控',
+    fixSteps:
+      '["1.确认零申报是否真实","2.若有收入未入账立即补记补报","3.避免长期零申报"]',
   },
   {
     code: 'EXCESS_CREDIT',
@@ -126,5 +161,9 @@ export const RISK_INDICATORS: RiskIndicatorSeed[] = [
     thresholdLow: null,
     severity: 'DEFAULT_MEDIUM',
     enabled: true,
+    plainDescription:
+      '你公司期末留抵税额占进项比例{metricValue}，留抵过大，税局会核查',
+    fixSteps:
+      '["1.核查大额留抵形成原因","2.确认进项真实且用于应税项目","3.加快销售实现销项抵扣"]',
   },
 ];

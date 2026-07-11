@@ -26,11 +26,11 @@ async function main() {
   console.log(`  - 管理员: ${admin.username} / admin123 (role=${admin.role})`);
   console.log(`  - 会计:   ${accountant.username} / accountant123 (role=${accountant.role})`);
 
-  // 初始化风险指标库：表为空时插入内置 9 类指标
-  const indicatorCount = await prisma.riskIndicator.count();
-  if (indicatorCount === 0) {
-    await prisma.riskIndicator.createMany({
-      data: RISK_INDICATORS.map((ind) => ({
+  // 初始化风险指标库：改用 upsert（按 code），确保已有数据也更新 plainDescription/fixSteps
+  for (const ind of RISK_INDICATORS) {
+    await prisma.riskIndicator.upsert({
+      where: { code: ind.code },
+      create: {
         code: ind.code,
         name: ind.name,
         description: ind.description,
@@ -40,12 +40,23 @@ async function main() {
         thresholdLow: ind.thresholdLow ?? null,
         severity: ind.severity,
         enabled: ind.enabled,
-      })),
+        plainDescription: ind.plainDescription,
+        fixSteps: ind.fixSteps,
+      },
+      update: {
+        name: ind.name,
+        description: ind.description,
+        category: ind.category,
+        thresholdHigh: ind.thresholdHigh,
+        thresholdMedium: ind.thresholdMedium,
+        thresholdLow: ind.thresholdLow ?? null,
+        severity: ind.severity,
+        plainDescription: ind.plainDescription,
+        fixSteps: ind.fixSteps,
+      },
     });
-    console.log(`风险指标库已初始化: ${RISK_INDICATORS.length} 条内置指标`);
-  } else {
-    console.log(`风险指标库已存在 ${indicatorCount} 条，跳过初始化`);
   }
+  console.log(`风险指标库已初始化/更新: ${RISK_INDICATORS.length} 条内置指标`);
 }
 
 main()

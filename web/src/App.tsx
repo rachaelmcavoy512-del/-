@@ -16,6 +16,8 @@ import RiskDashboard from './pages/Risks/RiskDashboard';
 import RiskEventList from './pages/Risks/RiskEventList';
 import RiskEventDetail from './pages/Risks/RiskEventDetail';
 import RiskIndicatorList from './pages/Risks/RiskIndicatorList';
+import RiskReport from './pages/Risks/RiskReport';
+import SmartBook from './pages/SmartBook/SmartBook';
 import ReportsHome from './pages/Reports/ReportsHome';
 import BalanceSheet from './pages/Reports/BalanceSheet';
 import IncomeStatement from './pages/Reports/IncomeStatement';
@@ -48,6 +50,7 @@ export default function App() {
         >
           <Route index element={<Home />} />
           <Route path="taxpayers" element={<TaxpayerList />} />
+          <Route path="smart-book" element={<SmartBook />} />
           <Route path="vouchers" element={<VoucherList />} />
           <Route path="vouchers/new" element={<VoucherForm />} />
           <Route path="vouchers/period-close" element={<PeriodClose />} />
@@ -66,6 +69,7 @@ export default function App() {
           <Route path="risks/events" element={<RiskEventList />} />
           <Route path="risks/events/:id" element={<RiskEventDetail />} />
           <Route path="risks/indicators" element={<RiskIndicatorList />} />
+          <Route path="risks/report" element={<RiskReport />} />
           <Route path="audit-log" element={<AuditLogList />} />
           <Route path="users" element={<Placeholder title="用户管理" />} />
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -4,6 +4,8 @@ import { requireRole } from '../middlewares/role';
 import { logAction } from '../middlewares/audit';
 import {
   createTaxpayer,
+  quickCreate,
+  summary,
   listTaxpayers,
   getTaxpayer,
   updateTaxpayer,
@@ -27,6 +29,18 @@ router.post(
 
 // 列表查询（所有登录用户可查）
 router.get('/', authenticate, listTaxpayers);
+
+// 极简创建（仅 ADMIN）+ 审计 —— 放在 /:id 之前避免被占位
+router.post(
+  '/quick-create',
+  authenticate,
+  requireRole('ADMIN'),
+  logAction('QUICK_CREATE_TAXPAYER', 'taxpayer'),
+  quickCreate
+);
+
+// 首页统计（所有登录用户）—— 放在 /:id 之前避免被占位
+router.get('/summary', authenticate, summary);
 
 // 详情（含 accounts 科目列表）
 router.get('/:id', authenticate, getTaxpayer);

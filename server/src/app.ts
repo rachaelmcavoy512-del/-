@@ -1,5 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import path from 'path';
+import fs from 'fs';
 import authRoutes from './routes/auth';
 import taxpayerRoutes from './routes/taxpayer';
 import auditRoutes from './routes/audit';
@@ -8,6 +10,7 @@ import importRoutes from './routes/import';
 import riskRoutes from './routes/risk';
 import reportRoutes from './routes/report';
 import taxReturnRoutes from './routes/taxReturn';
+import smartBookRoutes from './routes/smartBook';
 
 const app = express();
 
@@ -30,9 +33,20 @@ app.use('/api/vouchers', voucherRoutes);
 app.use('/api/tax-returns', taxReturnRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/risks', riskRoutes);
+app.use('/api/smart-book', smartBookRoutes);
 
-// 404 处理
-app.use((_req: Request, res: Response) => {
+// 生产模式：托管前端网页（静态文件 + SPA 路由回退）
+const publicDir = path.join(__dirname, '..', 'public');
+if (fs.existsSync(publicDir)) {
+  app.use(express.static(publicDir));
+  // SPA 回退：所有非 /api 路径都返回 index.html（让前端路由接管）
+  app.get('*', (_req: Request, res: Response) => {
+    res.sendFile(path.join(publicDir, 'index.html'));
+  });
+}
+
+// 404 处理（仅对未匹配的 /api 请求）
+app.use('/api', (_req: Request, res: Response) => {
   res.status(404).json({ error: '接口不存在' });
 });
 

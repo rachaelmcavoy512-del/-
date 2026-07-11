@@ -17,6 +17,9 @@ import {
   updateRemediation,
   listAssignees,
   dashboard,
+  report,
+  generateAdjustmentVoucherCtrl,
+  resolveEventCtrl,
 } from '../controllers/riskController';
 
 const router = Router();
@@ -28,6 +31,11 @@ router.use(authenticate);
 
 // GET /api/risks/dashboard  风险看板（所有登录用户可查）
 router.get('/dashboard', dashboard);
+
+// ============ 风险体检报告 ============
+
+// GET /api/risks/report?subjectId=&period=  风险体检报告（所有登录用户可查）
+router.get('/report', report);
 
 // ============ 指标库 ============
 
@@ -67,6 +75,22 @@ router.get('/events', listEvents);
 
 // GET /api/risks/events/:id  事件详情（含整改任务）
 router.get('/events/:id', getEvent);
+
+// POST /api/risks/events/:id/adjustment-voucher  生成整改凭证（ADMIN/ACCOUNTANT）+ 审计
+router.post(
+  '/events/:id/adjustment-voucher',
+  requireRole('ADMIN', 'ACCOUNTANT'),
+  logAction('GENERATE_ADJUSTMENT_VOUCHER', 'risk_event'),
+  generateAdjustmentVoucherCtrl
+);
+
+// POST /api/risks/events/:id/resolve  过账调整凭证并结案（ADMIN/ACCOUNTANT）+ 审计
+router.post(
+  '/events/:id/resolve',
+  requireRole('ADMIN', 'ACCOUNTANT'),
+  logAction('RESOLVE_RISK_EVENT', 'risk_event'),
+  resolveEventCtrl
+);
 
 // PUT /api/risks/events/:id/status  更新事件状态 + 审计
 router.put(

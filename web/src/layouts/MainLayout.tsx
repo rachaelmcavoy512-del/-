@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Layout, Menu, Avatar, Dropdown, Space, Typography, Spin } from 'antd';
 import type { MenuProps } from 'antd';
 import {
+  ThunderboltOutlined,
   BankOutlined,
   FileTextOutlined,
   BarChartOutlined,
@@ -44,6 +45,8 @@ interface MenuConfig {
 const ALL_ROLES = ['ADMIN', 'ACCOUNTANT', 'AUDITOR', 'VIEWER'];
 
 const MENU_CONFIG: MenuConfig[] = [
+  // 新手友好：智能记账置于首位
+  { key: '/smart-book', label: '智能记账', icon: <ThunderboltOutlined />, roles: ALL_ROLES },
   { key: '/taxpayers', label: '纳税人主体', icon: <BankOutlined />, roles: ALL_ROLES },
   { key: '/vouchers', label: '凭证记账', icon: <FileTextOutlined />, roles: ALL_ROLES },
   { key: '/reports', label: '财务报表', icon: <BarChartOutlined />, roles: ALL_ROLES },

@@ -5,6 +5,11 @@ import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import prisma from '../utils/prisma';
 import { scanSubject, rescanAll } from '../services/riskScanService';
+import { generateReport } from '../services/riskReportService';
+import {
+  generateAdjustmentVoucher,
+  postAdjustmentAndResolve,
+} from '../services/adjustmentService';
 
 // ============ 取值常量 ============
 
@@ -92,6 +97,8 @@ function serializeEvent(event: Prisma.RiskEventGetPayload<{
     resolution: event.resolution,
     createdAt: event.createdAt.toISOString(),
     updatedAt: event.updatedAt.toISOString(),
+    actionableSteps: event.actionableSteps,
+    adjustmentVoucherId: event.adjustmentVoucherId,
     indicator: {
       id: event.indicator.id,
       code: event.indicator.code,
@@ -515,6 +522,70 @@ export async function dashboard(req: Request, res: Response, next: NextFunction)
       trend,
     });
   } catch (err) {
+    next(err);
+  }
+}
+
+// ============ 风险体检报告 ============
+
+// GET /api/risks/report?subjectId=&period=
+// 生成风险体检报告（含大白话描述 + 改正步骤 + 总体评级）
+export async function report(req: Request, res: Response, next: NextFunction) {
+  try {
+    const subjectId = Number(req.query.subjectId);
+    if (Number.isNaN(subjectId)) {
+      return res.status(400).json({ error: '主体ID无效' });
+    }
+    const period = req.query.period ? String(req.query.period) : undefined;
+    const result = await generateReport(subjectId, period);
+    return res.json(result);
+  } catch (err) {
+    if (err instanceof Error) {
+      return res.status(400).json({ error: err.message });
+    }
+    next(err);
+  }
+}
+
+// ============ 一键整改 ============
+
+// POST /api/risks/events/:id/adjustment-voucher  生成整改凭证
+// body: { postImmediately?: boolean }
+export async function generateAdjustmentVoucherCtrl(req: Request, res: Response, next: NextFunction) {
+  try {
+    const eventId = Number(req.params.id);
+    if (Number.isNaN(eventId)) {
+      return res.status(400).json({ error: '无效的事件 ID' });
+    }
+    const userId = req.user!.id;
+    const result = await generateAdjustmentVoucher(eventId, userId);
+    // 若要求立即过账
+    if (req.body?.postImmediately) {
+      const posted = await postAdjustmentAndResolve(eventId, userId);
+      return res.json({ voucher: posted, adjustAmount: result.adjustAmount, posted: true });
+    }
+    return res.json(result);
+  } catch (err) {
+    if (err instanceof Error) {
+      return res.status(400).json({ error: err.message });
+    }
+    next(err);
+  }
+}
+
+// POST /api/risks/events/:id/resolve  过账调整凭证并结案
+export async function resolveEventCtrl(req: Request, res: Response, next: NextFunction) {
+  try {
+    const eventId = Number(req.params.id);
+    if (Number.isNaN(eventId)) {
+      return res.status(400).json({ error: '无效的事件 ID' });
+    }
+    const voucher = await postAdjustmentAndResolve(eventId, req.user!.id);
+    return res.json({ voucher, message: '整改凭证已过账，事件已结案' });
+  } catch (err) {
+    if (err instanceof Error) {
+      return res.status(400).json({ error: err.message });
+    }
     next(err);
   }
 }

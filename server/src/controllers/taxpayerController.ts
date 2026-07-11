@@ -64,6 +64,114 @@ function getSeedAccounts(taxpayerType: string) {
 
 // ============ 控制器方法 ============
 
+// POST /api/taxpayers/quick-create  极简创建（仅 ADMIN）
+// 新手友好：仅需 name+taxNumber+taxpayerType，复用 createTaxpayer 的科目初始化逻辑
+export async function quickCreate(req: Request, res: Response, next: NextFunction) {
+  try {
+    const quickSchema = z.object({
+      name: z.string().min(1, '企业名称不能为空'),
+      taxNumber: z.string().min(1, '纳税人识别号不能为空'),
+      taxpayerType: z.enum(TAXPAYER_TYPES),
+    });
+    const parsed = quickSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: '参数校验失败', detail: parsed.error.flatten() });
+    }
+    const { name, taxNumber, taxpayerType } = parsed.data;
+
+    // 纳税人识别号唯一性校验
+    const existing = await prisma.taxpayerSubject.findUnique({ where: { taxNumber } });
+    if (existing) {
+      return res.status(400).json({ error: '纳税人识别号已存在' });
+    }
+
+    // 事务：创建主体 + 初始化科目体系
+    const taxpayer = await prisma.$transaction(async (tx) => {
+      const subject = await tx.taxpayerSubject.create({
+        data: { name, taxNumber, taxpayerType },
+      });
+      const seedAccounts = getSeedAccounts(taxpayerType);
+      await tx.account.createMany({
+        data: seedAccounts.map((a) => ({
+          subjectId: subject.id,
+          code: a.code,
+          name: a.name,
+          direction: a.direction,
+          level: a.level,
+          parentCode: a.parentCode ?? null,
+          category: a.category,
+          balanceDirection: a.balanceDirection,
+          isLeaf: a.isLeaf,
+        })),
+      });
+      return subject;
+    });
+
+    const accountCount = await prisma.account.count({ where: { subjectId: taxpayer.id } });
+    return res.status(201).json({
+      ...taxpayer,
+      taxRate: serializeTaxRate(taxpayer.taxRate),
+      accountCount,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// GET /api/taxpayers/summary  首页统计（所有登录用户）
+// 返回所有主体列表，每个附 riskCount(当月PENDING/IN_PROGRESS)、voucherCount(当月凭证数)、lastReportPeriod
+export async function summary(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const subjects = await prisma.taxpayerSubject.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // 当月期次
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+    const period = `${year}-${String(month).padStart(2, '0')}`;
+    const monthStart = new Date(year, month - 1, 1, 0, 0, 0, 0);
+    const monthEnd = new Date(year, month, 0, 23, 59, 59, 999);
+
+    const result = [];
+    for (const t of subjects) {
+      // 当月风险数：PENDING/IN_PROGRESS
+      const riskCount = await prisma.riskEvent.count({
+        where: {
+          subjectId: t.id,
+          status: { in: ['PENDING', 'IN_PROGRESS'] },
+        },
+      });
+      // 当月凭证数
+      const voucherCount = await prisma.voucher.count({
+        where: {
+          subjectId: t.id,
+          voucherDate: { gte: monthStart, lte: monthEnd },
+        },
+      });
+      // 最近申报期次
+      const latestReturn = await prisma.taxReturn.findFirst({
+        where: { subjectId: t.id },
+        orderBy: { period: 'desc' },
+        select: { period: true },
+      });
+      result.push({
+        id: t.id,
+        name: t.name,
+        taxNumber: t.taxNumber,
+        taxpayerType: t.taxpayerType,
+        riskCount,
+        voucherCount,
+        lastReportPeriod: latestReturn?.period ?? null,
+      });
+    }
+    return res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 // POST /api/taxpayers  创建纳税人主体（仅 ADMIN）
 // 创建后根据 taxpayerType 自动初始化对应科目体系，事务保证一致性
 export async function createTaxpayer(req: Request, res: Response, next: NextFunction) {
